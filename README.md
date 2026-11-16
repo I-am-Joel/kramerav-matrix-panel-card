@@ -15,7 +15,7 @@ It works with the [KramerAVhass integration](https://github.com/I-am-Joel/Kramer
 - **STO** and **RCL** store and recall presets. On a unit with more presets than input buttons (for example 60 presets and 16 input buttons), the input buttons act as digits, and button 10 is 0. The window shows the prompt with a flashing colon, and the digits appear after it as you press them (`STORE: SELECT PRESET USING INPUT NUMBERS: 15`). Press two digits for a two-digit preset (**10** then **3** gives preset 3 straight away). If you press a single digit and stop, it is used as it stands after four seconds. A store needs **TAKE**; a filled preset needs **TAKE** to overwrite it. A recall needs no **TAKE**. Where every preset has its own input button, one press chooses it.
 - A three-line status window shows what is happening, and seven segment displays show which input feeds each output.
 - A straight (single-output) switch gets a simpler panel automatically: there is no OUTPUT section, no ALL button and no INPUT heading, and pressing an input routes it at once (`INPUT 05 > OUTPUT`). The lit input button shows the current route. Units with two or more outputs are unchanged.
-- Six optional user buttons run any Home Assistant action (a script, a scene or any action call). Each can be set to need **TAKE** first. To switch a device, choose **Perform action** and pick the action (for example `light.toggle`) and its target. **Toggle** and **More info** act on the optional **Entity** set for that button.
+- Six optional custom buttons run any Home Assistant action (a script, a scene or any action call). Each can be set to need **TAKE** first. To switch a device, choose **Perform action** and pick the action (for example `light.toggle`) and its target. **Toggle** and **More info** act on the optional **Entity** set for that button.
 - **LOCK** locks that one display (held in that browser, surviving a reload), so a wall panel can be protected from stray touches. It does not touch the unit's own front panel lock. Hold the button for three seconds (you can change this in the editor) to lock or unlock. A normal tap only shows `HOLD FOR 3 SECONDS TO LOCK`, so an accidental touch cannot lock the panel. The window then shows `PANEL LOCKED` or `PANEL UNLOCKED`.
 - Press and hold any button on a touch screen to see its long name in the status window.
 
@@ -32,10 +32,10 @@ In the card editor, choose the unit's **Status** sensor (for example `sensor.din
 
 | Tab | What it holds |
 | --- | --- |
-| Configuration | The unit, buttons per row (2, 4, 8, 16 or 32), rack-mount ears, the LOCK button, the status window, the seven segment displays and their colour, the function buttons (STO, RCL, LOCK, ALL, OFF and TAKE, which can be hidden for a simple switcher; TAKE stays if a user button needs it), the lock hold time, the press-and-hold time for long names, and the text on the bottom line. |
-| Button styles | The glow colours for video, audio and together (audio follows video), with colour-blind-safe defaults and a "Return to default" button. |
-| User-defined buttons | The row heading, and for each of six buttons a label (up to four characters), a long name, an action, an optional entity (for Toggle and More info), and "Enforce PRESS "TAKE" before running". |
-| Button names | Short (four-character) and long names for video inputs, audio inputs, video outputs and audio outputs. Short labels may be blank. Each list has a paste box (one name per line) and a "Use the integration's names" button. |
+| Configuration | The unit, buttons per row (2, 4, 8, 16 or 32), rack-mount ears, the status window, the seven segment displays and their colour, the function buttons (STO, RCL, LOCK, ALL, OFF and TAKE, which can be hidden for a simple switcher; TAKE stays if a custom button needs it), the LOCK button and its hold time, a switch for the custom buttons, the hold time before a button's long name is shown, and the model number text. For a unit with a single output the seven segment options are not shown. |
+| Button styles | The button colours for video, audio and audio follows video, with colour-blind-safe defaults and a "Return to default" button. |
+| Custom buttons | The row heading, then six collapsible rows, each closed to start with. Each button has a label (up to four characters), a long name, an action, an optional entity (for Toggle and More info), and "Enforce PRESS "TAKE" before running". Every row has a Show switch (a hidden button stays in the list, greyed, and the buttons below it move up on the card), a handle to drag it to a new place (or Move up and Move down), and a two-step Delete that closes the gap. |
+| Button names | Short (four-character) and long names for video inputs, audio inputs, video outputs and audio outputs (the output lists are not shown for a single-output unit). Short labels may be blank. Each list has a paste box (one name per line) and a "Use the integration's names" button. |
 
 Names are held in the card and start from the integration's names, so each dashboard can label the same unit differently. A short label for a button whose integration name is still a default ("Input 001 Video" and the like) is left blank, and the button shows only its number.
 
@@ -48,6 +48,7 @@ buttons_per_row: 8          # 2, 4, 8, 16 or 32 (automatic if left out)
 rack_ears: true
 lock_button: true
 show_function: true         # false hides STO, RCL, LOCK, ALL, OFF and TAKE
+show_custom_buttons: true   # false hides the custom buttons (their settings are kept)
 show_window: true
 show_segments: true
 segment_color: "#ff2a24"
@@ -62,6 +63,7 @@ user_heading: USER
 user_buttons:
   - label: FILM
     name: Film mode
+    hidden: false             # true hides this button on the card
     enforce_take: true
     entity: light.hall        # optional: for Toggle and More info
     action:
@@ -77,7 +79,7 @@ names:
 
 - One unit per card. Several units, daisy-chaining, other brands and the VP-729 scaler are not supported.
 - The card does not show the unit's own front panel lock state.
-- For user buttons that call an action (`perform-action`), the card reports success or failure. Other action types (navigate, URL, more info, toggle) are handed to Home Assistant, which does not report back, so they always show as done.
+- For custom buttons that call an action (`perform-action`), the card reports success or failure. Other action types (navigate, URL, more info, toggle) are handed to Home Assistant, which does not report back, so they always show as done.
 
 ## Accessibility
 
@@ -85,7 +87,6 @@ names:
 - Each button announces its long name and state, for example "Output 3, Kitchen, selected". The status window is announced when its message changes.
 - Nothing depends on colour alone, and all colours can be changed.
 - With reduced motion requested, flashing becomes a steady light and scrolling stops. Nothing flashes more than three times a second.
-- When buttons may be too small to press reliably on a touch screen, the editor says so.
 
 ## Licences
 
