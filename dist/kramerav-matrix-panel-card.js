@@ -7,7 +7,7 @@
  * Not written by, or endorsed by, Kramer AV. MIT licence. Fonts: SIL Open Font Licence (see FONT-LICENCES.md).
  */
 
-const CARD_VERSION = "0.1.1";
+const CARD_VERSION = "0.1.2";
 const CARD_TYPE = "kramerav-matrix-panel-card";
 const EDITOR_TYPE = "kramerav-matrix-panel-card-editor";
 const SIZE_EVENT = "kramerav-matrix-panel-card-size";
@@ -112,7 +112,7 @@ const CSS = `
   --led: ${DEFAULT_SEGMENT};
   --panel-top: #343a44; --panel-bottom: #282d35; --panel-edge: #12151a; --lettering: #c9ced4;
   --btn: #ebe7db; --btn-low: #c4bfae; --lcd-bg: #a8c43a; --lcd-ink: #1f2a12;
-  container-type: inline-size; position: relative; width: 100%; --side: 6.2cqw;
+  position: relative; width: 100%; --side: 6.2cqw;
   padding: 4cqw var(--side) 2.6cqw; border-radius: .5cqw;
   background: linear-gradient(var(--panel-top), var(--panel-bottom));
   box-shadow: 0 0 0 .25cqw var(--panel-edge), 0 1.4cqw 3cqw rgba(0, 0, 0, .5);
@@ -121,7 +121,7 @@ const CSS = `
   color: var(--lettering); user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
   touch-action: manipulation;
 }
-.panel.nowin { grid-template-columns: 23fr 77fr; }
+.wrap { container-type: inline-size; width: 100%; }
 .panel.ears { --side: 9cqw; }
 .ear { display: none; position: absolute; top: 0; bottom: 0; width: 4.4cqw; background: linear-gradient(90deg, #3d434e, #30353e); }
 .panel.ears .ear { display: block; }
@@ -266,6 +266,7 @@ class KramerAvMatrixPanelCard extends HTMLElement {
       buttons_per_row: perRow,
       rack_ears: config.rack_ears !== false,
       lock_button: config.lock_button !== false,
+      show_function: config.show_function !== false,
       hold_time: hold >= 0.3 && hold <= 3 ? hold : 0.8,
       lock_hold_time: lockHold >= 1 && lockHold <= 10 ? lockHold : 3,
       show_window: config.show_window !== false,
@@ -276,7 +277,8 @@ class KramerAvMatrixPanelCard extends HTMLElement {
       user_buttons: Array.isArray(config.user_buttons) ? config.user_buttons : [],
       names: config.names || {},
     };
-    this._locked = storageGet(this._lockKey()) === "1";
+    // A hidden LOCK button could never unlock, so a stored lock only counts while the button is there.
+    this._locked = this._config.lock_button && this._config.show_function && storageGet(this._lockKey()) === "1";
     this._sig = "";
     if (this._hass) this._refresh();
   }
@@ -411,7 +413,8 @@ class KramerAvMatrixPanelCard extends HTMLElement {
     const users = c.user_buttons.map((b, i) => (b && (b.label || b.action) ? i : -1)).filter((i) => i >= 0);
     const sig = JSON.stringify([
       u.inputs, u.outputs, u.modes, u.audio, u.off, u.slots > 0, perRow, c.rack_ears, c.lock_button,
-      c.show_window, c.show_segments, c.user_heading, users,
+      c.show_window, c.show_segments, c.user_heading, users, c.show_function,
+      users.some((i) => c.user_buttons[i].enforce_take),
     ]);
     if (sig !== this._sig) {
       this._sig = sig;
@@ -437,15 +440,20 @@ class KramerAvMatrixPanelCard extends HTMLElement {
       [["video", "VIDEO"], ["audio", "AUDIO"], ["afv", "AFV"]].forEach(([m, name]) =>
         modeItems.push(small("mode", m, name, `data-long="${name}" style="--glow:var(--${m === "afv" ? "together" : m})"`)));
     }
+    const single = u.outputs === 1; // a straight switch: no outputs to choose, so no OUTPUT section
+    const needsTake = users.some((i) => c.user_buttons[i].enforce_take);
     const fnItems = [];
-    if (u.slots > 0) {
-      fnItems.push(small("fn", "sto", "STO", 'data-long="Store a preset" style="--glow:#fff"'));
-      fnItems.push(small("fn", "rcl", "RCL", 'data-long="Recall a preset" style="--glow:#fff"'));
+    if (c.show_function) {
+      if (u.slots > 0) {
+        fnItems.push(small("fn", "sto", "STO", 'data-long="Store a preset" style="--glow:#fff"'));
+        fnItems.push(small("fn", "rcl", "RCL", 'data-long="Recall a preset" style="--glow:#fff"'));
+      }
+      if (c.lock_button) fnItems.push(small("fn", "lock", "LOCK", 'data-long="Lock this panel (hold)" style="--glow:var(--led)"'));
+      if (!single) fnItems.push(small("fn", "all", "ALL", 'data-long="All outputs" style="--glow:#fff"'));
+      if (u.off) fnItems.push(small("fn", "off", "OFF", 'data-long="Disconnect the chosen output" style="--glow:#fff"'));
     }
-    if (c.lock_button) fnItems.push(small("fn", "lock", "LOCK", 'data-long="Lock this panel (hold)" style="--glow:var(--led)"'));
-    fnItems.push(small("fn", "all", "ALL", 'data-long="All outputs" style="--glow:#fff"'));
-    if (u.off) fnItems.push(small("fn", "off", "OFF", 'data-long="Disconnect the chosen output" style="--glow:#fff"'));
-    fnItems.push(small("fn", "take", "TAKE", 'data-long="Confirm" style="--glow:#fff"'));
+    // TAKE stays when something needs it, even with the function buttons hidden.
+    if (c.show_function || needsTake) fnItems.push(small("fn", "take", "TAKE", 'data-long="Confirm" style="--glow:#fff"'));
     const userItems = users.map((i) => small("user", i, upper(c.user_buttons[i].label || ""), 'style="--glow:#fff"'));
 
     const digitsPer = Math.max(u.inputs, 1) > 99 ? 3 : 2;
@@ -477,21 +485,25 @@ class KramerAvMatrixPanelCard extends HTMLElement {
 
     this._root.innerHTML =
       `<style>${CSS}</style>` +
+      '<div class="wrap">' +
       `<section class="panel${c.rack_ears ? " ears" : ""}" style="--per:${perRow}" aria-label="${esc(u.model || "Matrix switcher")} panel">` +
       '<i class="ear l"></i><i class="ear r"></i><i class="screw tl"></i><i class="screw tr"></i><i class="screw bl"></i><i class="screw br"></i>' +
       '<div class="left">' +
       (c.show_window ? '<div class="lcd" id="lcd" role="status" aria-live="polite"><div class="view"><span class="msg"></span></div></div>' : "") +
       (modeItems.length ? group("MODE", modeItems) : "") +
-      group("FUNCTION", fnItems) +
+      (fnItems.length ? group("FUNCTION", fnItems) : "") +
       (userItems.length ? `<div><div class="hdr" id="userhdr">${esc(c.user_heading || " ")}</div><div class="fn">${userItems.join("")}</div></div>` : "") +
       "</div>" +
-      '<div class="right"><div class="hdr">OUTPUT</div>' +
-      rowsOf(u.outputs, (i) => cell("out", i), c.show_segments ? pair : null) +
-      '<div class="hdr" style="margin-top:1.2cqw">INPUT</div>' +
+      '<div class="right">' +
+      (single
+        ? ""
+        : '<div class="hdr">OUTPUT</div>' +
+          rowsOf(u.outputs, (i) => cell("out", i), c.show_segments ? pair : null) +
+          '<div class="hdr" style="margin-top:1.2cqw">INPUT</div>') +
       rowsOf(u.inputs, (i) => cell("in", i), null) +
       "</div>" +
       '<div class="foot" id="foot"></div>' +
-      "</section>";
+      "</section></div>";
 
     const q = (sel) => Array.from(this._root.querySelectorAll(sel));
     this._els = {
@@ -569,7 +581,7 @@ class KramerAvMatrixPanelCard extends HTMLElement {
   }
 
   _reportSize() {
-    if (!this._els || !this._els.out.length) return;
+    if (!this._els) return;
     const first = this._els.out[0] || this._els.inp[0];
     const px = first ? Math.round(first.getBoundingClientRect().width) : 0;
     if (px && px !== this._lastKeyPx) {
@@ -594,7 +606,8 @@ class KramerAvMatrixPanelCard extends HTMLElement {
     panel.classList.toggle("locked", this._locked);
     e.foot.textContent = upper(c.model_text || u.model);
 
-    const sel = online ? this._sel : null;
+    const single = u.outputs === 1;
+    const sel = online ? (single ? 1 : this._sel) : null;
     const showRoute = !this._fn;
     let src = -1;
     if (showRoute && sel !== null) {
@@ -604,7 +617,7 @@ class KramerAvMatrixPanelCard extends HTMLElement {
         src = Array.from({ length: u.outputs }, (_, o) => this._routeOf(u, layer, o)).every((r) => r === first) ? first : -1;
       }
     }
-    const flashing = this._pendingOut && !this._reduced();
+    const flashing = this._pendingOut && !single && !this._reduced();
 
     e.out.forEach((btn, i) => {
       const nm = this._name(u, layer, "out", i);
@@ -622,7 +635,7 @@ class KramerAvMatrixPanelCard extends HTMLElement {
       btn.title = nm.long;
       const lit = !this._fn && src === i + 1;
       btn.classList.toggle("lit", lit);
-      btn.classList.toggle("flash", lit && this._pendingOut && !this._fn);
+      btn.classList.toggle("flash", lit && this._pendingOut && !single && !this._fn);
       btn.style.setProperty("--glow", this._fn ? "#fff" : glow);
       const presetName = this._fn ? `Preset digit ${(i + 1) % 10}, ` : "";
       btn.setAttribute("aria-label", `${presetName}Input ${i + 1}, ${nm.long}${lit ? ", selected" : ""}`);
@@ -830,15 +843,16 @@ class KramerAvMatrixPanelCard extends HTMLElement {
   async _pressInput(u, n) {
     this._userPending = null;
     if (this._fn) return this._enterPreset(u, n);
-    if (this._sel === null) return;
+    const single = u.outputs === 1;
+    const target = single ? 1 : this._sel;
+    if (target === null) return;
     const layer = this._layer(u);
-    const outputs = this._sel === 0 ? ["all"] : [String(this._sel)];
+    const outputs = target === 0 ? ["all"] : [String(target)];
     const sent = { input: String(n), outputs, layer: u.modes && u.audio && layer !== "afv" ? layer : "both" };
-    const all = this._sel === 0;
-    const out = this._sel;
     this._pendingOut = false;
     await this._call("set_route", sent);
-    this._show(`INPUT ${pad2(n)} > ${all ? "ALL OUTPUTS" : `OUTPUT ${pad2(out)}`}`, 4000);
+    const where = single ? "OUTPUT" : target === 0 ? "ALL OUTPUTS" : `OUTPUT ${pad2(target)}`;
+    this._show(`INPUT ${pad2(n)} > ${where}`, 4000);
   }
 
   async _pressMode(u, m) {
@@ -880,16 +894,18 @@ class KramerAvMatrixPanelCard extends HTMLElement {
       this._show("ALL OUTPUTS < SELECT INPUT", 0);
     } else if (k === "off") {
       this._userPending = null;
-      if (this._sel === null) return;
-      const all = this._sel === 0;
-      const out = this._sel;
+      const single = u.outputs === 1;
+      const target = single ? 1 : this._sel;
+      if (target === null) return;
+      const all = target === 0;
+      const out = target;
       this._pendingOut = false;
       await this._call("set_route", {
         input: "0",
         outputs: all ? ["all"] : [String(out)],
         layer: u.modes && u.audio && this._layer(u) !== "afv" ? this._layer(u) : "both",
       });
-      this._show(all ? "ALL OUTPUTS OFF" : `OUTPUT ${pad2(out)} OFF`, 4000);
+      this._show(all ? "ALL OUTPUTS OFF" : single ? "OUTPUT OFF" : `OUTPUT ${pad2(out)} OFF`, 4000);
     } else if (k === "sto" || k === "rcl") {
       this._userPending = null;
       this._pendingOut = false;
@@ -1016,7 +1032,7 @@ class KramerAvMatrixPanelCard extends HTMLElement {
     this._show(`RUNNING: ${name}`, 0);
     this._paint(this._unit());
     try {
-      await this._perform(b.action);
+      await this._perform(b.action, b.entity);
     } catch (err) {
       this._userState = { [i]: "error" };
       this._error(err);
@@ -1033,7 +1049,7 @@ class KramerAvMatrixPanelCard extends HTMLElement {
     }, 500);
   }
 
-  _perform(action) {
+  _perform(action, entity) {
     const a = action || {};
     const type = a.action;
     if (!type || type === "none") return Promise.resolve();
@@ -1045,7 +1061,7 @@ class KramerAvMatrixPanelCard extends HTMLElement {
     }
     // navigate, url, more-info, toggle: Home Assistant carries these out itself and does not report back.
     const ev = new Event("hass-action", { bubbles: true, composed: true });
-    ev.detail = { config: { tap_action: a, entity: a.entity }, action: "tap" };
+    ev.detail = { config: { tap_action: a, entity: entity || a.entity }, action: "tap" };
     this.dispatchEvent(ev);
     return Promise.resolve();
   }
@@ -1122,8 +1138,31 @@ class KramerAvMatrixPanelCardEditor extends HTMLElement {
   }
 
   set hass(hass) {
+    const first = !this._hass;
     this._hass = hass;
     this._root.querySelectorAll("ha-selector").forEach((s) => (s.hass = hass));
+    if (first && this._config.entity !== undefined && this._root.firstChild) this._render(); // the sensor list needs hass
+  }
+
+  /* Only real Kramer Status sensors are offered: they carry the routing and schema_version attributes. */
+  _statusEntities() {
+    const states = (this._hass && this._hass.states) || {};
+    const ids = Object.keys(states).filter((id) => {
+      const a = states[id].attributes || {};
+      return id.startsWith("sensor.") && "video_routes" in a && "schema_version" in a;
+    });
+    if (this._config.entity && !ids.includes(this._config.entity)) ids.push(this._config.entity);
+    return ids.sort();
+  }
+
+  /* Home Assistant's pickers show whatever value they are given, so each change is fed back to the picker as well as saved. */
+  _bind(sel, path, empty) {
+    sel.addEventListener("value-changed", (e) => {
+      e.stopPropagation();
+      const v = e.detail.value;
+      sel.value = v;
+      this._set(path, empty !== undefined && v === empty ? undefined : v);
+    });
   }
 
   _emit(config) {
@@ -1183,12 +1222,16 @@ class KramerAvMatrixPanelCardEditor extends HTMLElement {
     const box = h("div");
     const sel = document.createElement("ha-selector");
     sel.hass = this._hass;
-    sel.selector = { entity: { integration: "kramer", domain: "sensor" } };
+    const found = this._statusEntities();
+    sel.selector = { entity: { include_entities: found } };
     sel.value = c.entity || "";
     sel.label = "Status sensor of the unit";
-    sel.addEventListener("value-changed", (e) => { e.stopPropagation(); this._set(["entity"], e.detail.value); });
+    this._bind(sel, ["entity"]);
     box.appendChild(sel);
-    box.appendChild(h("p", { class: "note", text: "Choose the Status sensor (it ends in \"Status\"). The card finds the unit's device from it." }));
+    box.appendChild(h("p", { class: found.length ? "note" : "warn",
+      text: found.length
+        ? "Only the Status sensors of your Kramer switchers are listed. The card finds the unit's device from the one you choose."
+        : "No Kramer Status sensors found. Check that the Kramer integration is loaded." }));
     box.appendChild(this._field("Buttons per row",
       h("select", { onchange: (e) => this._set(["buttons_per_row"], e.target.value ? Number(e.target.value) : undefined) },
         [h("option", { value: "", text: "Automatic" })].concat(PER_ROW.map((n) =>
@@ -1199,6 +1242,9 @@ class KramerAvMatrixPanelCardEditor extends HTMLElement {
     box.appendChild(this._check("LOCK button", ["lock_button"], c.lock_button !== false));
     box.appendChild(this._check("Status window", ["show_window"], c.show_window !== false));
     box.appendChild(this._check("7 segment displays", ["show_segments"], c.show_segments !== false));
+    box.appendChild(this._check("Function buttons", ["show_function"], c.show_function !== false));
+    box.appendChild(h("p", { class: "note",
+      text: "Function buttons are STO, RCL, LOCK, ALL, OFF and TAKE. When they are hidden, presets, OFF and the card lock cannot be used from the card. TAKE is still shown if a user button needs it." }));
     box.appendChild(this._field("7 segment display colour",
       h("input", { type: "color", value: c.segment_color || DEFAULT_SEGMENT, oninput: (e) => this._set(["segment_color"], e.target.value) })));
     box.appendChild(this._field("Lock hold time (seconds, 1 to 10)",
@@ -1246,8 +1292,17 @@ class KramerAvMatrixPanelCardEditor extends HTMLElement {
       act.selector = { ui_action: {} };
       act.value = b.action || { action: "none" };
       act.label = "Action";
-      act.addEventListener("value-changed", (e) => { e.stopPropagation(); this._set(["user_buttons", i, "action"], e.detail.value); });
+      this._bind(act, ["user_buttons", i, "action"]);
       fs.appendChild(act);
+      fs.appendChild(h("p", { class: "note",
+        text: "To switch a device, choose Perform action and pick the action, for example light.toggle. Toggle and More info act on the entity chosen below." }));
+      const ent = document.createElement("ha-selector");
+      ent.hass = this._hass;
+      ent.selector = { entity: {} };
+      ent.value = b.entity || "";
+      ent.label = "Entity (for Toggle or More info)";
+      this._bind(ent, ["user_buttons", i, "entity"], "");
+      fs.appendChild(ent);
       fs.appendChild(this._check('Enforce PRESS "TAKE" before running', ["user_buttons", i, "enforce_take"], !!b.enforce_take));
       box.appendChild(fs);
     }
