@@ -7,7 +7,7 @@
  * Not written by, or endorsed by, Kramer AV. MIT licence. Fonts: SIL Open Font Licence (see FONT-LICENCES.md).
  */
 
-const CARD_VERSION = "0.1.0";
+const CARD_VERSION = "0.1.1";
 const CARD_TYPE = "kramerav-matrix-panel-card";
 const EDITOR_TYPE = "kramerav-matrix-panel-card-editor";
 const SIZE_EVENT = "kramerav-matrix-panel-card-size";
@@ -178,10 +178,11 @@ const CSS = `
 .panel.locked .key:not([data-fn="lock"]) { cursor: not-allowed; }
 @keyframes blink { 0%, 49% { opacity: 1; } 50%, 100% { opacity: .15; } }
 .flash { animation: blink 1s steps(1) infinite; }
+.blink { animation: blink 1s steps(1) infinite; }
 .flash-slow { animation: blink 1s steps(1) infinite; }
 .flash-fast { animation: blink .34s steps(1) infinite; }
 @media (prefers-reduced-motion: reduce) {
-  .flash, .flash-slow, .flash-fast { animation: none; }
+  .flash, .flash-slow, .flash-fast, .blink { animation: none; }
   .lcd .msg { transition: none; }
 }
 .window {
@@ -211,7 +212,10 @@ class KramerAvMatrixPanelCard extends HTMLElement {
     this._sel = null; // null = nothing chosen, 0 = ALL, n = output n
     this._pendingOut = false;
     this._fn = null; // "sto" | "rcl"
-    this._digits = []; // first digit(s) typed while choosing a preset
+    this._entry = ""; // digit(s) typed while choosing a preset
+    this._entryTimer = null;
+    this._entryBusy = false;
+    this._holdBtn = null;
     this._presetPick = null; // preset waiting for TAKE
     this._userPending = null; // user button waiting for TAKE
     this._userState = {}; // index -> "running" | "done" | "error"
@@ -256,12 +260,14 @@ class KramerAvMatrixPanelCard extends HTMLElement {
     if (!config.entity) throw new Error("Choose the Status sensor of a Kramer switcher");
     const perRow = PER_ROW.includes(Number(config.buttons_per_row)) ? Number(config.buttons_per_row) : 0;
     const hold = Number(config.hold_time);
+    const lockHold = Number(config.lock_hold_time);
     this._config = {
       ...config,
       buttons_per_row: perRow,
       rack_ears: config.rack_ears !== false,
       lock_button: config.lock_button !== false,
       hold_time: hold >= 0.3 && hold <= 3 ? hold : 0.8,
+      lock_hold_time: lockHold >= 1 && lockHold <= 10 ? lockHold : 3,
       show_window: config.show_window !== false,
       show_segments: config.show_segments !== false,
       segment_color: config.segment_color || DEFAULT_SEGMENT,
@@ -295,7 +301,7 @@ class KramerAvMatrixPanelCard extends HTMLElement {
   }
 
   disconnectedCallback() {
-    [this._idleTimer, this._scrollTimer, this._errTimer, this._holdTimer].forEach(clearTimeout);
+    [this._idleTimer, this._scrollTimer, this._errTimer, this._holdTimer, this._entryTimer].forEach(clearTimeout);
     if (this._ro) this._ro.disconnect();
     this._ro = null;
   }
@@ -510,15 +516,28 @@ class KramerAvMatrixPanelCard extends HTMLElement {
 
   _wire() {
     const panel = this._els.panel;
-    const hold = () => this._config.hold_time * 1000;
+    const isLock = (btn) => btn.dataset.act === "fn" && btn.dataset.i === "lock";
     const startHold = (btn) => {
       clearTimeout(this._holdTimer);
+      this._held = false;
+      const lock = isLock(btn);
+      if (lock) this._showLockHint();
+      this._holdBtn = btn;
+      const seconds = lock ? this._config.lock_hold_time : this._config.hold_time;
       this._holdTimer = setTimeout(() => {
+        this._holdTimer = null;
         this._held = true;
         this._onHold(btn);
-      }, hold());
+      }, seconds * 1000);
     };
-    const stopHold = () => clearTimeout(this._holdTimer);
+    const stopHold = () => {
+      if (!this._holdTimer) return;
+      clearTimeout(this._holdTimer);
+      this._holdTimer = null;
+      // LOCK released too early: leave the hint up for a moment, then go back to the idle message.
+      if (this._holdBtn && isLock(this._holdBtn)) this._showLockHint(1500);
+      this._holdBtn = null;
+    };
     panel.addEventListener("pointerdown", (e) => {
       const btn = e.target.closest("button[data-act]");
       if (btn) startHold(btn);
@@ -601,8 +620,7 @@ class KramerAvMatrixPanelCard extends HTMLElement {
       const nm = this._name(u, layer, "in", i);
       btn.querySelector(".lab").textContent = nm.short;
       btn.title = nm.long;
-      const digitLit = this._fn && this._digits.length && this._digits[0].idx === i;
-      const lit = (!this._fn && src === i + 1) || !!digitLit;
+      const lit = !this._fn && src === i + 1;
       btn.classList.toggle("lit", lit);
       btn.classList.toggle("flash", lit && this._pendingOut && !this._fn);
       btn.style.setProperty("--glow", this._fn ? "#fff" : glow);
@@ -731,13 +749,18 @@ class KramerAvMatrixPanelCard extends HTMLElement {
 
   /* ------------------------------------------------ pressing buttons */
 
+  _showLockHint(holdMs = 0) {
+    const n = this._config.lock_hold_time;
+    this._show(`HOLD FOR ${n} SECOND${n === 1 ? "" : "S"} TO ${this._locked ? "UNLOCK" : "LOCK"}`, holdMs);
+  }
+
   _onHold(btn) {
     if (btn.dataset.act === "fn" && btn.dataset.i === "lock") {
       this._locked = !this._locked;
       storageSet(this._lockKey(), this._locked ? "1" : null);
       this._cancelAll();
       if (this._locked) this._show("PANEL LOCKED", 0, false, true);
-      else this._showIdle();
+      else this._show("PANEL UNLOCKED", 4000);
       this._paint(this._unit());
       return;
     }
@@ -746,11 +769,18 @@ class KramerAvMatrixPanelCard extends HTMLElement {
     if (nm) this._show(nm, 4000);
   }
 
+  _cancelEntry() {
+    clearTimeout(this._entryTimer);
+    this._entryTimer = null;
+    this._entry = "";
+    this._entryBusy = false;
+  }
+
   _cancelAll() {
     this._sel = null;
     this._pendingOut = false;
     this._fn = null;
-    this._digits = [];
+    this._cancelEntry();
     this._presetPick = null;
     this._userPending = null;
   }
@@ -789,7 +819,7 @@ class KramerAvMatrixPanelCard extends HTMLElement {
 
   _pressOutput(n) {
     this._fn = null;
-    this._digits = [];
+    this._cancelEntry();
     this._presetPick = null;
     this._userPending = null;
     this._sel = n;
@@ -842,7 +872,7 @@ class KramerAvMatrixPanelCard extends HTMLElement {
   async _pressFn(u, k) {
     if (k === "all") {
       this._fn = null;
-      this._digits = [];
+      this._cancelEntry();
       this._presetPick = null;
       this._userPending = null;
       this._sel = 0;
@@ -864,9 +894,9 @@ class KramerAvMatrixPanelCard extends HTMLElement {
       this._userPending = null;
       this._pendingOut = false;
       this._presetPick = null;
-      this._digits = [];
+      this._cancelEntry();
       this._fn = this._fn === k ? null : k;
-      if (this._fn) this._show(`${k === "sto" ? "STORE" : "RECALL"}: SELECT PRESET USING INPUT NUMBERS`, 0);
+      if (this._fn) this._showEntry();
       else this._showIdle();
     } else if (k === "take") {
       if (this._fn === "sto" && this._presetPick) await this._store(u);
@@ -878,20 +908,61 @@ class KramerAvMatrixPanelCard extends HTMLElement {
     }
   }
 
+  /* The prompt for choosing a preset: the colon flashes until the entry is complete, and the digits follow it. */
+  _showEntry() {
+    const e = this._els;
+    if (!e || !e.msg) return;
+    clearTimeout(this._idleTimer);
+    clearTimeout(this._scrollTimer);
+    clearTimeout(this._errTimer);
+    this._idleTimer = null;
+    this._msgFixed = true;
+    const base = `${this._fn === "sto" ? "STORE" : "RECALL"}: SELECT PRESET USING INPUT NUMBERS`;
+    const digits = this._entry ? ` ${this._entry}` : "";
+    e.msg.style.transition = "none";
+    e.msg.style.transform = "";
+    void e.msg.offsetWidth;
+    e.msg.style.transition = "";
+    e.msg.innerHTML = `${esc(base)}<span class="blink">:</span>${esc(digits)}`;
+    this._msgText = `${base}:${digits}`;
+    if (e.lcd) e.lcd.title = this._msgText;
+    this._scrollTimer = setTimeout(() => this._scroll(), 30);
+  }
+
   async _enterPreset(u, n) {
-    const twoDigit = u.slots > u.inputs;
-    let preset;
-    if (!twoDigit) preset = n;
-    else {
-      if (n > 10) return; // only the first ten input buttons act as digits
-      const digit = n % 10;
-      if (!this._digits.length) {
-        this._digits = [{ digit, idx: n - 1 }];
-        return;
-      }
-      preset = this._digits[0].digit * 10 + digit;
-      this._digits = [];
+    if (this._entryBusy) return;
+    if (u.slots <= u.inputs) return this._finishPreset(u, n); // every preset has its own button
+    if (n > 10) return; // only the first ten input buttons act as digits (button 10 is 0)
+    const digit = String(n % 10);
+    if (!this._entry) {
+      // A first digit on its own is used as it stands if no second digit comes within four seconds.
+      this._entry = digit;
+      this._showEntry();
+      this._entryTimer = setTimeout(() => this._entryDone(), 4000);
+      return;
     }
+    clearTimeout(this._entryTimer);
+    this._entry += digit;
+    this._entryBusy = true;
+    this._showEntry();
+    this._entryTimer = setTimeout(() => this._entryDone(), 500); // a moment to read the whole number
+  }
+
+  async _entryDone() {
+    const preset = Number(this._entry);
+    this._entryTimer = null;
+    this._entry = "";
+    this._entryBusy = false;
+    try {
+      await this._finishPreset(this._unit(), preset);
+    } catch (err) {
+      this._fn = null;
+      this._error(err);
+    }
+    this._paint(this._unit());
+  }
+
+  async _finishPreset(u, preset) {
     if (preset < 1 || preset > u.slots) throw new Error(`Preset ${preset} does not exist`);
     if (this._fn === "rcl") {
       this._fn = null;
@@ -933,7 +1004,7 @@ class KramerAvMatrixPanelCard extends HTMLElement {
     this._sel = null;
     this._pendingOut = false;
     this._fn = null;
-    this._digits = [];
+    this._cancelEntry();
     this._presetPick = null;
     this._userPending = null;
   }
@@ -1130,7 +1201,11 @@ class KramerAvMatrixPanelCardEditor extends HTMLElement {
     box.appendChild(this._check("7 segment displays", ["show_segments"], c.show_segments !== false));
     box.appendChild(this._field("7 segment display colour",
       h("input", { type: "color", value: c.segment_color || DEFAULT_SEGMENT, oninput: (e) => this._set(["segment_color"], e.target.value) })));
-    box.appendChild(this._field("Press-and-hold time (seconds, 0.3 to 3)",
+    box.appendChild(this._field("Lock hold time (seconds, 1 to 10)",
+      h("input", { type: "number", min: "1", max: "10", step: "1", value: c.lock_hold_time || 3,
+        onchange: (e) => this._set(["lock_hold_time"], Number(e.target.value) || 3) }),
+      "How long LOCK must be held to lock or unlock the panel. It affects only the LOCK button."));
+    box.appendChild(this._field("Press-and-hold time for long names (seconds, 0.3 to 3)",
       h("input", { type: "number", min: "0.3", max: "3", step: "0.1", value: c.hold_time || 0.8,
         onchange: (e) => this._set(["hold_time"], Number(e.target.value) || 0.8) })));
     box.appendChild(this._field("Text on the bottom line",
