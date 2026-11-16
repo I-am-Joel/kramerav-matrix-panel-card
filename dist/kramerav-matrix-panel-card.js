@@ -7,7 +7,9 @@
  * Not written by, or endorsed by, Kramer AV. MIT licence. Fonts: SIL Open Font Licence (see FONT-LICENCES.md).
  */
 
-const CARD_VERSION = "0.1.3";
+const CARD_VERSION = "0.1.4";
+const MSG_NOT_FOUND = "Selected sensor not found. Check if device or integration is offline and that the sensor name is correct.";
+const MSG_WRONG = "Selected sensor is incorrect. A Kramer Status sensor must be selected.";
 const CARD_TYPE = "kramerav-matrix-panel-card";
 const EDITOR_TYPE = "kramerav-matrix-panel-card-editor";
 const USER_SLOTS = 6;
@@ -265,6 +267,7 @@ class KramerAvMatrixPanelCard extends HTMLElement {
       lock_button: config.lock_button !== false,
       show_function: config.show_function !== false,
       show_custom_buttons: config.show_custom_buttons !== false,
+      show_model_text: config.show_model_text !== false,
       hold_time: hold >= 0.3 && hold <= 3 ? hold : 0.8,
       lock_hold_time: lockHold >= 1 && lockHold <= 10 ? lockHold : 3,
       show_window: config.show_window !== false,
@@ -312,7 +315,7 @@ class KramerAvMatrixPanelCard extends HTMLElement {
 
   _online() {
     const s = this._state();
-    return !!s && s.state !== "unavailable" && s.state !== "unknown";
+    return !!s && s.state !== "unavailable" && s.state !== "unknown" && s.state !== "offline";
   }
 
   _unit() {
@@ -396,7 +399,8 @@ class KramerAvMatrixPanelCard extends HTMLElement {
     if (!u.ok) {
       this._sig = "";
       this._els = null;
-      const bad = this._state() ? "This sensor is not a Kramer Status sensor." : "Waiting for the Kramer Status sensor.";
+      const st = this._state();
+      const bad = !st || st.state === "unavailable" || st.state === "unknown" ? MSG_NOT_FOUND : MSG_WRONG;
       this._root.innerHTML = `<style>${CSS}</style><div class="err">${bad}</div>`;
       return;
     }
@@ -407,7 +411,7 @@ class KramerAvMatrixPanelCard extends HTMLElement {
       : [];
     const sig = JSON.stringify([
       u.inputs, u.outputs, u.modes, u.audio, u.off, u.slots > 0, perRow, c.rack_ears, c.lock_button,
-      c.show_window, c.show_segments, c.user_heading, users, c.show_function,
+      c.show_window, c.show_segments, c.show_model_text, c.user_heading, users, c.show_function,
       users.some((i) => c.user_buttons[i].enforce_take),
     ]);
     if (sig !== this._sig) {
@@ -496,7 +500,7 @@ class KramerAvMatrixPanelCard extends HTMLElement {
           '<div class="hdr" style="margin-top:1.2cqw">INPUT</div>') +
       rowsOf(u.inputs, (i) => cell("in", i), null) +
       "</div>" +
-      '<div class="foot" id="foot"></div>' +
+      (c.show_model_text ? '<div class="foot" id="foot"></div>' : "") +
       "</section></div>";
 
     const q = (sel) => Array.from(this._root.querySelectorAll(sel));
@@ -587,7 +591,7 @@ class KramerAvMatrixPanelCard extends HTMLElement {
     panel.style.setProperty("--together", c.colors.together);
     panel.style.setProperty("--led", c.segment_color);
     panel.classList.toggle("locked", this._locked);
-    e.foot.textContent = upper(c.model_text || u.model);
+    if (e.foot) e.foot.textContent = upper(c.model_text || u.model);
 
     const single = u.outputs === 1;
     const sel = online ? (single ? 1 : this._sel) : null;
@@ -639,7 +643,7 @@ class KramerAvMatrixPanelCard extends HTMLElement {
       p.classList.toggle("flash", flashing && (sel === 0 || sel === o + 1));
     });
     Object.entries(e.mode).forEach(([m, btn]) => {
-      const lit = layer === m;
+      const lit = online && layer === m;
       btn.classList.toggle("lit", lit);
       btn.setAttribute("aria-pressed", lit ? "true" : "false");
       btn.setAttribute("aria-label", btn.dataset.long);
@@ -1084,9 +1088,11 @@ details { margin: 0 0 12px; border: 1px solid var(--divider-color, #ccc); border
 summary { cursor: pointer; padding: 6px 0; font-weight: 600; }
 .names { display: grid; grid-template-columns: 3em 6em 1fr; gap: 6px; align-items: center; margin: 8px 0; }
 .sub { margin: 16px 0 8px; font-size: 15px; font-weight: 600; }
-.urow { border-bottom: 1px solid var(--divider-color, #ccc); padding: 4px 8px; border-radius: 4px; }
-.urow.odd { background: color-mix(in srgb, var(--primary-text-color) 3%, transparent); }
-.urow.even { background: color-mix(in srgb, var(--primary-text-color) 9%, transparent); }
+.urow { border: 1px solid color-mix(in srgb, var(--primary-text-color) 35%, transparent); border-radius: 10px; margin: 0 0 12px; padding: 4px 8px; }
+.urow.odd { background: color-mix(in srgb, var(--primary-text-color) 4%, transparent); }
+.urow.even { background: color-mix(in srgb, var(--primary-text-color) 10%, transparent); }
+.urow.open { border-color: var(--primary-color); border-width: 2px; padding: 3px 7px; }
+.urow.open .ubody { border-top: 1px solid color-mix(in srgb, var(--primary-text-color) 35%, transparent); margin-top: 4px; padding-top: 12px; }
 .urow.off .uhead .utog, .urow.off .ubody { opacity: .4; }
 .urow.dragging { opacity: .6; }
 .urow.drop { outline: 2px dashed var(--primary-color); }
@@ -1240,10 +1246,14 @@ class KramerAvMatrixPanelCardEditor extends HTMLElement {
     box.appendChild(this._field("Hold time before displaying a button's long name (0.3 to 3 seconds)",
       h("input", { type: "number", min: "0.3", max: "3", step: "0.1", value: c.hold_time || 0.8,
         onchange: (e) => this._set(["hold_time"], Number(e.target.value) || 0.8) })));
-    box.appendChild(this._field("Model number text",
-      h("input", { type: "text", value: c.model_text || "", placeholder: a.model || "Model name",
-        oninput: (e) => this._set(["model_text"], e.target.value || undefined) }),
-      "Leave blank to show the model name."));
+    const mt = h("input", { type: "text", value: c.model_text || "", placeholder: a.model || "Model name",
+      disabled: c.show_model_text === false, oninput: (e) => this._set(["model_text"], e.target.value || undefined) });
+    box.appendChild(h("label", { class: "chk" }, [
+      h("input", { type: "checkbox", checked: c.show_model_text !== false,
+        onchange: (e) => { this._set(["show_model_text"], e.target.checked); mt.disabled = !e.target.checked; } }),
+      h("span", { text: "Model number text" }),
+    ]));
+    box.appendChild(h("label", { class: "f" }, [mt, h("span", { class: "note", text: "Leave blank to show the model name." })]));
     return box;
   }
 
@@ -1311,7 +1321,7 @@ class KramerAvMatrixPanelCardEditor extends HTMLElement {
     const wrap = h("div", { class: "ulist" });
     list.forEach((b, i) => {
       const open = !!this._open[i];
-      const row = h("div", { class: `urow ${i % 2 ? "even" : "odd"}${b.hidden ? " off" : ""}`, "data-row": String(i) });
+      const row = h("div", { class: `urow ${i % 2 ? "even" : "odd"}${b.hidden ? " off" : ""}${open ? " open" : ""}`, "data-row": String(i) });
       rows.push(row);
       const summary = h("button", { type: "button", class: "utog", "aria-expanded": open ? "true" : "false", text: this._userSummary(i, b),
         onclick: () => { this._open[i] = !this._open[i]; this._render(); } });
