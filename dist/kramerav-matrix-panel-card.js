@@ -7,10 +7,9 @@
  * Not written by, or endorsed by, Kramer AV. MIT licence. Fonts: SIL Open Font Licence (see FONT-LICENCES.md).
  */
 
-const CARD_VERSION = "0.1.2";
+const CARD_VERSION = "0.1.3";
 const CARD_TYPE = "kramerav-matrix-panel-card";
 const EDITOR_TYPE = "kramerav-matrix-panel-card-editor";
-const SIZE_EVENT = "kramerav-matrix-panel-card-size";
 const USER_SLOTS = 6;
 const DEFAULT_COLORS = { video: "#56b4e9", audio: "#e69f00", together: "#009e73" };
 const DEFAULT_SEGMENT = "#ff2a24";
@@ -229,8 +228,6 @@ class KramerAvMatrixPanelCard extends HTMLElement {
     this._holdTimer = null;
     this._held = false;
     this._locked = false;
-    this._lastKeyPx = 0;
-    this._ro = null;
   }
 
   /* ------------------------------------------------ Home Assistant hooks */
@@ -267,6 +264,7 @@ class KramerAvMatrixPanelCard extends HTMLElement {
       rack_ears: config.rack_ears !== false,
       lock_button: config.lock_button !== false,
       show_function: config.show_function !== false,
+      show_custom_buttons: config.show_custom_buttons !== false,
       hold_time: hold >= 0.3 && hold <= 3 ? hold : 0.8,
       lock_hold_time: lockHold >= 1 && lockHold <= 10 ? lockHold : 3,
       show_window: config.show_window !== false,
@@ -295,17 +293,11 @@ class KramerAvMatrixPanelCard extends HTMLElement {
 
   connectedCallback() {
     loadFonts();
-    if (typeof ResizeObserver !== "undefined" && !this._ro) {
-      this._ro = new ResizeObserver(() => this._reportSize());
-      this._ro.observe(this);
-    }
     if (this._config && this._hass) this._refresh();
   }
 
   disconnectedCallback() {
     [this._idleTimer, this._scrollTimer, this._errTimer, this._holdTimer, this._entryTimer].forEach(clearTimeout);
-    if (this._ro) this._ro.disconnect();
-    this._ro = null;
   }
 
   /* ------------------------------------------------ unit data */
@@ -410,7 +402,9 @@ class KramerAvMatrixPanelCard extends HTMLElement {
     }
     const c = this._config;
     const perRow = this._perRow(u);
-    const users = c.user_buttons.map((b, i) => (b && (b.label || b.action) ? i : -1)).filter((i) => i >= 0);
+    const users = c.show_custom_buttons
+      ? c.user_buttons.map((b, i) => (b && !b.hidden && (b.label || b.action) ? i : -1)).filter((i) => i >= 0)
+      : [];
     const sig = JSON.stringify([
       u.inputs, u.outputs, u.modes, u.audio, u.off, u.slots > 0, perRow, c.rack_ears, c.lock_button,
       c.show_window, c.show_segments, c.user_heading, users, c.show_function,
@@ -523,7 +517,6 @@ class KramerAvMatrixPanelCard extends HTMLElement {
     this._wire();
     this._msgText = "";
     this._msgFixed = false;
-    setTimeout(() => this._reportSize(), 0);
   }
 
   _wire() {
@@ -578,16 +571,6 @@ class KramerAvMatrixPanelCard extends HTMLElement {
       if (btn.dataset.act === "fn" && btn.dataset.i === "lock") return; // LOCK works by holding only
       this._press(btn.dataset.act, btn.dataset.i);
     });
-  }
-
-  _reportSize() {
-    if (!this._els) return;
-    const first = this._els.out[0] || this._els.inp[0];
-    const px = first ? Math.round(first.getBoundingClientRect().width) : 0;
-    if (px && px !== this._lastKeyPx) {
-      this._lastKeyPx = px;
-      window.dispatchEvent(new CustomEvent(SIZE_EVENT, { detail: { entity: this._config.entity, keyPx: px } }));
-    }
   }
 
   /* ------------------------------------------------ painting */
@@ -687,7 +670,6 @@ class KramerAvMatrixPanelCard extends HTMLElement {
     if (!online) {
       if (this._msgText !== "OFFLINE") this._show("OFFLINE", 0, false, true);
     } else if (!this._msgFixed) this._showIdle(u);
-    this._reportSize();
   }
 
   _reduced() {
@@ -1101,7 +1083,22 @@ fieldset { border: 1px solid var(--divider-color, #ccc); border-radius: 8px; mar
 details { margin: 0 0 12px; border: 1px solid var(--divider-color, #ccc); border-radius: 8px; padding: 6px 12px; }
 summary { cursor: pointer; padding: 6px 0; font-weight: 600; }
 .names { display: grid; grid-template-columns: 3em 6em 1fr; gap: 6px; align-items: center; margin: 8px 0; }
+.sub { margin: 16px 0 8px; font-size: 15px; font-weight: 600; }
+.urow { border-bottom: 1px solid var(--divider-color, #ccc); padding: 4px 8px; border-radius: 4px; }
+.urow.odd { background: color-mix(in srgb, var(--primary-text-color) 3%, transparent); }
+.urow.even { background: color-mix(in srgb, var(--primary-text-color) 9%, transparent); }
+.urow.off .uhead .utog, .urow.off .ubody { opacity: .4; }
+.urow.dragging { opacity: .6; }
+.urow.drop { outline: 2px dashed var(--primary-color); }
+.uhead { display: flex; align-items: center; gap: 6px; }
+.utog { flex: 1; text-align: left; background: none; border: 0; font: inherit; color: var(--primary-text-color); padding: 10px 4px; cursor: pointer; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grip, .mv { background: none; border: 1px solid var(--divider-color, #999); border-radius: 6px; color: var(--primary-text-color); min-width: 36px; height: 36px; cursor: pointer; font: inherit; }
+.grip { cursor: grab; touch-action: none; }
+.show { display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--secondary-text-color); }
+.show input { width: 18px; height: 18px; }
+.ubody { padding: 8px 4px 4px; }
 .btn { font: inherit; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--primary-color); background: none; color: var(--primary-color); cursor: pointer; margin: 4px 8px 4px 0; }
+.btn.danger { border-color: var(--error-color, #b00020); color: var(--error-color, #b00020); }
 `;
 
 class KramerAvMatrixPanelCardEditor extends HTMLElement {
@@ -1111,22 +1108,9 @@ class KramerAvMatrixPanelCardEditor extends HTMLElement {
     this._config = {};
     this._hass = null;
     this._tab = 0;
-    this._keyPx = 0;
     this._last = "";
-    this._onSize = (e) => {
-      if (e.detail.entity !== this._config.entity) return;
-      this._keyPx = e.detail.keyPx;
-      const w = this._root.getElementById("touchwarn");
-      if (w) w.hidden = !(this._keyPx && this._keyPx < 40);
-    };
-  }
-
-  connectedCallback() {
-    window.addEventListener(SIZE_EVENT, this._onSize);
-  }
-
-  disconnectedCallback() {
-    window.removeEventListener(SIZE_EVENT, this._onSize);
+    this._open = [false, false, false, false, false, false];
+    this._confirmDel = -1;
   }
 
   setConfig(config) {
@@ -1193,9 +1177,9 @@ class KramerAvMatrixPanelCardEditor extends HTMLElement {
     return h("label", { class: "f" }, [h("span", { text: label }), input, note ? h("span", { class: "note", text: note }) : null]);
   }
 
-  _check(label, path, on) {
+  _check(label, path, on, cb) {
     return h("label", { class: "chk" }, [
-      h("input", { type: "checkbox", checked: on, onchange: (e) => this._set(path, e.target.checked) }),
+      h("input", { type: "checkbox", checked: on, onchange: (e) => (cb ? cb(e.target.checked) : this._set(path, e.target.checked)) }),
       h("span", { text: label }),
     ]);
   }
@@ -1204,7 +1188,7 @@ class KramerAvMatrixPanelCardEditor extends HTMLElement {
     const root = this._root;
     root.innerHTML = "";
     root.appendChild(h("style", { text: EDITOR_CSS }));
-    const names = ["Configuration", "Button styles", "User-defined buttons", "Button names"];
+    const names = ["Configuration", "Button styles", "Custom buttons", "Button names"];
     root.appendChild(
       h("div", { class: "tabs", role: "tablist" },
         names.map((n, i) =>
@@ -1232,29 +1216,31 @@ class KramerAvMatrixPanelCardEditor extends HTMLElement {
       text: found.length
         ? "Only the Status sensors of your Kramer switchers are listed. The card finds the unit's device from the one you choose."
         : "No Kramer Status sensors found. Check that the Kramer integration is loaded." }));
+    const single = Number(a.outputs) === 1;
     box.appendChild(this._field("Buttons per row",
       h("select", { onchange: (e) => this._set(["buttons_per_row"], e.target.value ? Number(e.target.value) : undefined) },
         [h("option", { value: "", text: "Automatic" })].concat(PER_ROW.map((n) =>
           h("option", { value: String(n), text: String(n), selected: Number(c.buttons_per_row) === n }))))));
-    box.appendChild(h("p", { id: "touchwarn", class: "warn", hidden: !(this._keyPx && this._keyPx < 40),
-      text: "These buttons may be too small to press reliably on a touch screen." }));
     box.appendChild(this._check("Rack-mount ears", ["rack_ears"], c.rack_ears !== false));
-    box.appendChild(this._check("LOCK button", ["lock_button"], c.lock_button !== false));
     box.appendChild(this._check("Status window", ["show_window"], c.show_window !== false));
-    box.appendChild(this._check("7 segment displays", ["show_segments"], c.show_segments !== false));
+    if (!single) {
+      box.appendChild(this._check("7 segment displays", ["show_segments"], c.show_segments !== false));
+      box.appendChild(this._field("7 segment display colour",
+        h("input", { type: "color", value: c.segment_color || DEFAULT_SEGMENT, oninput: (e) => this._set(["segment_color"], e.target.value) })));
+    }
     box.appendChild(this._check("Function buttons", ["show_function"], c.show_function !== false));
     box.appendChild(h("p", { class: "note",
-      text: "Function buttons are STO, RCL, LOCK, ALL, OFF and TAKE. When they are hidden, presets, OFF and the card lock cannot be used from the card. TAKE is still shown if a user button needs it." }));
-    box.appendChild(this._field("7 segment display colour",
-      h("input", { type: "color", value: c.segment_color || DEFAULT_SEGMENT, oninput: (e) => this._set(["segment_color"], e.target.value) })));
-    box.appendChild(this._field("Lock hold time (seconds, 1 to 10)",
+      text: "Function buttons are STO, RCL, LOCK, ALL, OFF and TAKE. When they are hidden, presets, OFF and the card lock cannot be used from the card. TAKE is still shown if a custom button needs it." }));
+    box.appendChild(this._check("LOCK button", ["lock_button"], c.lock_button !== false));
+    box.appendChild(this._field("Lock button hold time (1-10 seconds)",
       h("input", { type: "number", min: "1", max: "10", step: "1", value: c.lock_hold_time || 3,
         onchange: (e) => this._set(["lock_hold_time"], Number(e.target.value) || 3) }),
       "How long LOCK must be held to lock or unlock the panel. It affects only the LOCK button."));
-    box.appendChild(this._field("Press-and-hold time for long names (seconds, 0.3 to 3)",
+    box.appendChild(this._check("Custom buttons", ["show_custom_buttons"], c.show_custom_buttons !== false));
+    box.appendChild(this._field("Hold time before displaying a button's long name (0.3 to 3 seconds)",
       h("input", { type: "number", min: "0.3", max: "3", step: "0.1", value: c.hold_time || 0.8,
         onchange: (e) => this._set(["hold_time"], Number(e.target.value) || 0.8) })));
-    box.appendChild(this._field("Text on the bottom line",
+    box.appendChild(this._field("Model number text",
       h("input", { type: "text", value: c.model_text || "", placeholder: a.model || "Model name",
         oninput: (e) => this._set(["model_text"], e.target.value || undefined) }),
       "Leave blank to show the model name."));
@@ -1265,7 +1251,8 @@ class KramerAvMatrixPanelCardEditor extends HTMLElement {
     const c = this._config;
     const colors = { ...DEFAULT_COLORS, ...(c.colors || {}) };
     const box = h("div");
-    [["video", "Video glow"], ["audio", "Audio glow"], ["together", "Together (audio follows video) glow"]].forEach(([k, label]) =>
+    box.appendChild(h("h3", { class: "sub", text: "Button colour" }));
+    [["video", "Video"], ["audio", "Audio"], ["together", "Audio follows video"]].forEach(([k, label]) =>
       box.appendChild(this._field(label,
         h("input", { type: "color", value: colors[k], oninput: (e) => this._set(["colors", k], e.target.value) }))));
     box.appendChild(h("button", { type: "button", class: "btn", text: "Return to default",
@@ -1274,38 +1261,163 @@ class KramerAvMatrixPanelCardEditor extends HTMLElement {
     return box;
   }
 
+  _userList() {
+    const src = Array.isArray(this._config.user_buttons) ? this._config.user_buttons : [];
+    const list = [];
+    for (let i = 0; i < USER_SLOTS; i++) list.push(src[i] && typeof src[i] === "object" ? { ...src[i] } : {});
+    return list;
+  }
+
+  _saveUsers(list) {
+    const l = list.slice();
+    while (l.length && !Object.keys(l[l.length - 1]).length) l.pop();
+    this._set(["user_buttons"], l.length ? l : undefined);
+  }
+
+  _updateUser(i, key, value) {
+    const list = this._userList();
+    if (value === "" || value === false || value === undefined || value === null) delete list[i][key];
+    else list[i][key] = value;
+    this._saveUsers(list);
+  }
+
+  _moveUser(from, to) {
+    if (to < 0 || to >= USER_SLOTS || to === from) return;
+    const list = this._userList();
+    list.splice(to, 0, list.splice(from, 1)[0]);
+    this._open.splice(to, 0, this._open.splice(from, 1)[0]);
+    this._confirmDel = -1;
+    this._saveUsers(list);
+    this._render();
+  }
+
+  _userSummary(i, b) {
+    const empty = !(b.label || b.name || b.action);
+    let t = `Button ${i + 1}: `;
+    if (empty) t += "(empty)";
+    else t += [b.label, b.name].filter(Boolean).join(": ") || "(no label)";
+    if (b.hidden) t += " (hidden)";
+    return t;
+  }
+
   _tabUsers() {
     const c = this._config;
     const box = h("div");
     box.appendChild(this._field("Row heading",
       h("input", { type: "text", maxlength: "12", value: c.user_heading == null ? "USER" : c.user_heading,
         oninput: (e) => this._set(["user_heading"], e.target.value) })));
-    for (let i = 0; i < USER_SLOTS; i++) {
-      const b = (c.user_buttons || [])[i] || {};
-      const fs = h("fieldset", {}, [h("legend", { text: `Button ${i + 1}` })]);
-      fs.appendChild(this._field("Label (up to four characters)",
-        h("input", { type: "text", maxlength: "4", value: b.label || "", oninput: (e) => this._set(["user_buttons", i, "label"], e.target.value) })));
-      fs.appendChild(this._field("Long name",
-        h("input", { type: "text", value: b.name || "", oninput: (e) => this._set(["user_buttons", i, "name"], e.target.value) })));
-      const act = document.createElement("ha-selector");
-      act.hass = this._hass;
-      act.selector = { ui_action: {} };
-      act.value = b.action || { action: "none" };
-      act.label = "Action";
-      this._bind(act, ["user_buttons", i, "action"]);
-      fs.appendChild(act);
-      fs.appendChild(h("p", { class: "note",
-        text: "To switch a device, choose Perform action and pick the action, for example light.toggle. Toggle and More info act on the entity chosen below." }));
-      const ent = document.createElement("ha-selector");
-      ent.hass = this._hass;
-      ent.selector = { entity: {} };
-      ent.value = b.entity || "";
-      ent.label = "Entity (for Toggle or More info)";
-      this._bind(ent, ["user_buttons", i, "entity"], "");
-      fs.appendChild(ent);
-      fs.appendChild(this._check('Enforce PRESS "TAKE" before running', ["user_buttons", i, "enforce_take"], !!b.enforce_take));
-      box.appendChild(fs);
-    }
+    const list = this._userList();
+    const rows = [];
+    const wrap = h("div", { class: "ulist" });
+    list.forEach((b, i) => {
+      const open = !!this._open[i];
+      const row = h("div", { class: `urow ${i % 2 ? "even" : "odd"}${b.hidden ? " off" : ""}`, "data-row": String(i) });
+      rows.push(row);
+      const summary = h("button", { type: "button", class: "utog", "aria-expanded": open ? "true" : "false", text: this._userSummary(i, b),
+        onclick: () => { this._open[i] = !this._open[i]; this._render(); } });
+      const grip = h("button", { type: "button", class: "grip", "data-grip": String(i), "aria-label": `Drag to reorder button ${i + 1}`, title: "Drag to reorder", text: "\u2630" });
+      grip.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+          e.preventDefault();
+          const to = i + (e.key === "ArrowUp" ? -1 : 1);
+          this._moveUser(i, to);
+          const g = this._root.querySelector(`[data-grip="${Math.min(Math.max(to, 0), USER_SLOTS - 1)}"]`);
+          if (g) g.focus();
+        }
+      });
+      grip.addEventListener("pointerdown", (e) => {
+        e.preventDefault();
+        grip.setPointerCapture(e.pointerId);
+        let target = i;
+        row.classList.add("dragging");
+        const move = (ev) => {
+          let t = rows.length - 1;
+          for (let k = 0; k < rows.length; k++) {
+            const r = rows[k].getBoundingClientRect();
+            if (ev.clientY < r.top + r.height / 2) { t = k; break; }
+          }
+          target = t;
+          rows.forEach((r, k) => r.classList.toggle("drop", k === target && k !== i));
+        };
+        const end = () => {
+          grip.removeEventListener("pointermove", move);
+          grip.removeEventListener("pointerup", end);
+          grip.removeEventListener("pointercancel", end);
+          rows.forEach((r) => r.classList.remove("drop", "dragging"));
+          this._moveUser(i, target);
+        };
+        grip.addEventListener("pointermove", move);
+        grip.addEventListener("pointerup", end);
+        grip.addEventListener("pointercancel", end);
+      });
+      const up = h("button", { type: "button", class: "mv", "aria-label": `Move button ${i + 1} up`, title: "Move up", text: "\u25B2", disabled: i === 0,
+        onclick: () => this._moveUser(i, i - 1) });
+      const down = h("button", { type: "button", class: "mv", "aria-label": `Move button ${i + 1} down`, title: "Move down", text: "\u25BC", disabled: i === USER_SLOTS - 1,
+        onclick: () => this._moveUser(i, i + 1) });
+      const show = h("label", { class: "show" }, [
+        h("input", { type: "checkbox", "aria-label": `Show button ${i + 1} on the card`, checked: !b.hidden,
+          onchange: (e) => { this._updateUser(i, "hidden", !e.target.checked); this._render(); } }),
+        h("span", { text: "Show" }),
+      ]);
+      row.appendChild(h("div", { class: "uhead" }, [grip, summary, show, up, down]));
+      if (open) {
+        const body = h("div", { class: "ubody" });
+        const upd = () => { summary.textContent = this._userSummary(i, this._userList()[i]); };
+        body.appendChild(this._field("Label (up to four characters)",
+          h("input", { type: "text", maxlength: "4", value: b.label || "",
+            oninput: (e) => { this._updateUser(i, "label", e.target.value); upd(); } })));
+        body.appendChild(this._field("Long name",
+          h("input", { type: "text", value: b.name || "",
+            oninput: (e) => { this._updateUser(i, "name", e.target.value); upd(); } })));
+        const act = document.createElement("ha-selector");
+        act.hass = this._hass;
+        act.selector = { ui_action: {} };
+        act.value = b.action || { action: "none" };
+        act.label = "Action";
+        act.addEventListener("value-changed", (e) => {
+          e.stopPropagation();
+          act.value = e.detail.value;
+          this._updateUser(i, "action", e.detail.value);
+          upd();
+        });
+        body.appendChild(act);
+        body.appendChild(h("p", { class: "note",
+          text: "To switch a device, choose Perform action and pick the action, for example light.toggle. Toggle and More info act on the entity chosen below." }));
+        const ent = document.createElement("ha-selector");
+        ent.hass = this._hass;
+        ent.selector = { entity: {} };
+        ent.value = b.entity || "";
+        ent.label = "Entity (for Toggle or More info)";
+        ent.addEventListener("value-changed", (e) => {
+          e.stopPropagation();
+          ent.value = e.detail.value;
+          this._updateUser(i, "entity", e.detail.value || "");
+        });
+        body.appendChild(ent);
+        body.appendChild(this._check('Enforce PRESS "TAKE" before running', null, !!b.enforce_take, (v) => this._updateUser(i, "enforce_take", v)));
+        if (this._confirmDel === i) {
+          body.appendChild(h("button", { type: "button", class: "btn danger", text: "Confirm delete",
+            onclick: () => {
+              const l = this._userList();
+              l.splice(i, 1);
+              l.push({});
+              this._open.splice(i, 1);
+              this._open.push(false);
+              this._confirmDel = -1;
+              this._saveUsers(l);
+              this._render();
+            } }));
+          body.appendChild(h("button", { type: "button", class: "btn", text: "Cancel",
+            onclick: () => { this._confirmDel = -1; this._render(); } }));
+        } else {
+          body.appendChild(h("button", { type: "button", class: "btn danger", text: "Delete",
+            onclick: () => { this._confirmDel = i; this._render(); } }));
+        }
+        row.appendChild(body);
+      }
+      wrap.appendChild(row);
+    });
+    box.appendChild(wrap);
     return box;
   }
 
@@ -1319,6 +1431,7 @@ class KramerAvMatrixPanelCardEditor extends HTMLElement {
     NAME_LISTS.forEach(([key, title, unitKey, countKey]) => {
       const count = Number(a[countKey]) || 0;
       if ((key.startsWith("audio") && !(a.features || {}).audio) || !count) return;
+      if (key.endsWith("outputs") && count === 1) return; // a straight switch has no output buttons to name
       const det = h("details");
       det.appendChild(h("summary", { text: title }));
       const saved = (c.names || {})[key] || [];
