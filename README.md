@@ -18,6 +18,7 @@ It works with the [KramerAVhass integration](https://github.com/I-am-Joel/Kramer
 - Six optional custom buttons run any Home Assistant action (a script, a scene or any action call). Each can be set to need **TAKE** first. To switch a device, choose **Perform action** and pick the action (for example `light.toggle`) and its target. **Toggle** and **More info** act on the optional **Entity** set for that button.
 - **LOCK** locks that one display (held in that browser, surviving a reload), so a wall panel can be protected from stray touches. It does not touch the unit's own front panel lock. Hold the button for three seconds (you can change this in the editor) to lock or unlock. A normal tap only shows `HOLD FOR 3 SECONDS TO LOCK`, so an accidental touch cannot lock the panel. The window then shows `PANEL LOCKED` or `PANEL UNLOCKED`.
 - Press and hold any button on a touch screen to see its long name in the status window.
+- **Powered off.** With version 0.14.3 or later of the integration, a unit that is switched off still draws: all the lights go out, the seven segment displays go dark, the window shows `OFFLINE` and presses do nothing. The panel lights up again, with the current routes, when the unit answers. A card can also be added to a dashboard while the unit is off.
 
 ## Installation
 
@@ -32,7 +33,7 @@ In the card editor, choose the unit's **Status** sensor (for example `sensor.din
 
 | Tab | What it holds |
 | --- | --- |
-| Configuration | The unit, buttons per row (2, 4, 8, 16 or 32), rack-mount ears, the status window, the seven segment displays and their colour, the function buttons (STO, RCL, LOCK, ALL, OFF and TAKE, which can be hidden for a simple switcher; TAKE stays if a custom button needs it), the LOCK button and its hold time, a switch for the custom buttons, the hold time before a button's long name is shown, and the model number text. For a unit with a single output the seven segment options are not shown. |
+| Configuration | The unit, buttons per row (2, 4, 8, 16 or 32), rack-mount ears, the status window, the seven segment displays and their colour, the function buttons (STO, RCL, LOCK, ALL, OFF and TAKE, which can be hidden for a simple switcher; TAKE stays if a custom button needs it), the LOCK button and its hold time, a switch for the custom buttons, the hold time before a button's long name is shown, and the model number text (with a switch that hides the text and the line above it, for a slightly shorter card). For a unit with a single output the seven segment options are not shown. |
 | Button styles | The button colours for video, audio and audio follows video, with colour-blind-safe defaults and a "Return to default" button. |
 | Custom buttons | The row heading, then six collapsible rows, each closed to start with. Each button has a label (up to four characters), a long name, an action, an optional entity (for Toggle and More info), and "Enforce PRESS "TAKE" before running". Every row has a Show switch (a hidden button stays in the list, greyed, and the buttons below it move up on the card), a handle to drag it to a new place (or Move up and Move down), and a two-step Delete that closes the gap. |
 | Button names | Short (four-character) and long names for video inputs, audio inputs, video outputs and audio outputs (the output lists are not shown for a single-output unit). Short labels may be blank. Each list has a paste box (one name per line) and a "Use the integration's names" button. |
@@ -55,6 +56,7 @@ segment_color: "#ff2a24"
 hold_time: 0.8              # press-and-hold for long names, seconds, 0.3 to 3
 lock_hold_time: 3           # hold time for LOCK only, seconds, 1 to 10
 model_text: ""              # blank shows the model name
+show_model_text: true       # false hides the model text and the line above it
 colors:
   video: "#56b4e9"
   audio: "#e69f00"
@@ -75,8 +77,16 @@ names:
       long: Lounge
 ```
 
+## Messages when the sensor cannot be used
+
+| Message | What it means |
+| --- | --- |
+| Selected sensor not found. Check if device or integration is offline and that the sensor name is correct. | The sensor is missing, or it is `unavailable` with no layout (the integration is not loaded, or it is older than 0.14.3 and the unit is off). |
+| Selected sensor is incorrect. A Kramer Status sensor must be selected. | The sensor exists but is not a Kramer Status sensor. |
+
 ## Limits
 
+- The offline panel needs integration 0.14.3 or later. With an older integration a powered-off unit shows the first message above.
 - One unit per card. Several units, daisy-chaining, other brands and the VP-729 scaler are not supported.
 - The card does not show the unit's own front panel lock state.
 - For custom buttons that call an action (`perform-action`), the card reports success or failure. Other action types (navigate, URL, more info, toggle) are handed to Home Assistant, which does not report back, so they always show as done.
