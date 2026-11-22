@@ -11,14 +11,14 @@ It works with the [KramerAVhass integration](https://github.com/I-am-Joel/Kramer
 
 ## What it does
 
-- One card per unit. The same layout serves every supported model, and buttons for features a model does not have are hidden.
 - Routing: press an output (or **ALL**), then an input. The route is sent when the input is pressed.
-- **OFF** disconnects the chosen output, on models that can do it. A disconnected output shows `--`.
-- **VIDEO**, **AUDIO** and **AFV** show and change the layers, on models with separate audio and video switching.
-- **STO** and **RCL** store and recall presets. On a unit with more presets than input buttons (for example 60 presets and 16 input buttons), the input buttons act as digits, and button 10 is 0. The window shows the prompt with a flashing colon, and the digits appear after it as you press them (`STORE: SELECT PRESET USING INPUT NUMBERS: 15`). Press two digits for a two-digit preset (**10** then **3** gives preset 3 straight away). If you press a single digit and stop, it is used as it stands after four seconds. A store needs **TAKE**; a filled preset needs **TAKE** to overwrite it. A recall needs no **TAKE**. Where every preset has its own input button, one press chooses it.
-- A three-line status window shows what is happening, and seven segment displays show which input feeds each output.
-- A straight (single-output) switch gets a simpler panel automatically: there is no OUTPUT section, no ALL button and no INPUT heading, and pressing an input routes it at once (`INPUT 05 > OUTPUT`). The lit input button shows the current route. Units with two or more outputs are unchanged.
-- Six optional custom buttons run any Home Assistant action (a script, a scene or any action call). Each can be set to need **TAKE** first. To switch a device, choose **Perform action** and pick the action (for example `light.toggle`) and its target. **Toggle** and **More info** act on the optional **Entity** set for that button.
+- **OFF** disconnects the chosen output, on models that support this. A disconnected output shows `--`.
+- **VIDEO**, **AUDIO** and **AFV** show and enable independent control of audio and video layers on models with separate audio and video switching.
+- **STO** and **RCL** store and recall presets. On a unit with more presets than input buttons (for example 60 presets and 16 input buttons), the input buttons act as digits, with button "10" as "0". The card's virtual LCD window shows prompts with a flashing colon, and the digits appear after it as you press them (`STORE: SELECT PRESET USING INPUT NUMBERS: 15`). Press two digits for a two-digit preset (**10** then **3** gives preset 3 straight away). If you press a single digit and stop, it is used as it stands after four seconds. A store needs **TAKE**; a filled preset needs **TAKE** to overwrite it. A recall needs no **TAKE**. Where every preset has its own input button, one press chooses it.
+- A three-line virtual LCD status window shows what is happening, and seven segment displays show which input feeds each output.
+- A straight (single-output) switch gets a simpler panel automatically: there is no OUTPUT section, no ALL button and no INPUT heading, and pressing an input routes it at once (`INPUT 05 > OUTPUT`). The lit input button shows the current route.
+- Six optional custom buttons run any Home Assistant action (a script, a scene or any action call). Each can be set to need **TAKE** first, if wanted. To switch a device, choose **Perform action** and pick the action (for example `light.toggle`) and its target. **Toggle** and **More info** act on an optional **Entity** set for that button.
+<img width="1010" height="1096" alt="Define up to six of your own custom buttons" src="https://github.com/user-attachments/assets/d875dd4d-0fab-478b-b283-6bfb9c39120f" />
 - **LOCK** locks that one display (held in that browser, surviving a reload), so a wall panel can be protected from stray touches. It does not touch the unit's own front panel lock. Hold the button for three seconds (you can change this in the editor) to lock or unlock. A normal tap only shows `HOLD FOR 3 SECONDS TO LOCK`, so an accidental touch cannot lock the panel. The window then shows `PANEL LOCKED` or `PANEL UNLOCKED`.
 - Press and hold any button on a touch screen to see its long name in the status window.
 - **Powered off.** With version 0.14.3 or later of the integration, a unit that is switched off still draws: all the lights go out, the seven segment displays go dark, the window shows `OFFLINE` and presses do nothing. The panel lights up again, with the current routes, when the unit answers. A card can also be added to a dashboard while the unit is off.
@@ -44,8 +44,6 @@ In the card editor, choose the unit's **Status** sensor (for example `sensor.din
 <img width="2054" height="1410" alt="Kramer matrix card editor view" src="https://github.com/user-attachments/assets/fb86f771-866f-45b7-b167-f05381fa8f0c" />
 
 Names are held in the card and start from the integration's names, so each dashboard can label the same unit differently. A short label for a button whose integration name is still a default ("Input 001 Video" and the like) is left blank, and the button shows only its number.
-
-<img width="1010" height="1096" alt="Define up to six of your own custom buttons" src="https://github.com/user-attachments/assets/d875dd4d-0fab-478b-b283-6bfb9c39120f" />
 
 <img width="676" height="574" alt="kramer-matrix-card-custom-buttons" src="https://github.com/user-attachments/assets/7c71917e-d4c6-4337-98fb-43301f162aeb" />
 
