@@ -41,7 +41,12 @@ In the card editor, choose the unit's **Status** sensor (for example `sensor.din
 | Custom buttons | The row heading, then six collapsible rows, each closed to start with. Each button has a label (up to four characters), a long name, an action, an optional entity (for Toggle and More info), and "Enforce PRESS "TAKE" before running". Every row has a Show switch (a hidden button stays in the list, greyed, and the buttons below it move up on the card), a handle to drag it to a new place (or Move up and Move down), and a two-step Delete that closes the gap. |
 | Button names | Short (four-character) and long names for video inputs, audio inputs, video outputs and audio outputs (the output lists are not shown for a single-output unit). Short labels may be blank. Each list has a paste box (one name per line) and a "Use the integration's names" button. |
 
+<img width="2054" height="1410" alt="Kramer matrix card editor view" src="https://github.com/user-attachments/assets/fb86f771-866f-45b7-b167-f05381fa8f0c" />
+
 Names are held in the card and start from the integration's names, so each dashboard can label the same unit differently. A short label for a button whose integration name is still a default ("Input 001 Video" and the like) is left blank, and the button shows only its number.
+
+<img width="1010" height="1096" alt="Define up to six of your own custom buttons" src="https://github.com/user-attachments/assets/d875dd4d-0fab-478b-b283-6bfb9c39120f" />
+
 
 ### YAML
 
@@ -95,6 +100,8 @@ names:
 - For custom buttons that call an action (`perform-action`), the card reports success or failure. Other action types (navigate, URL, more info, toggle) are handed to Home Assistant, which does not report back, so they always show as done.
 
 ## Accessibility
+
+<img width="2050" height="1144" alt="Define the card's button colours" src="https://github.com/user-attachments/assets/85948c74-4f2a-4579-ae49-1fc09ad2fc90" />
 
 - Every button can be reached with Tab and pressed with Enter or Space, and the focused button has a clear outline. To lock or unlock from the keyboard, hold Enter or Space on LOCK for the lock hold time.
 - Each button announces its long name and state, for example "Output 3, Kitchen, selected". The status window is announced when its message changes.
