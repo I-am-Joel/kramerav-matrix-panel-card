@@ -111,4 +111,4 @@ names:
 
 The card is released under the MIT licence (see `LICENSE`). The embedded fonts (Orbitron, Share Tech Mono and Barlow Semi Condensed) are under the SIL Open Font Licence 1.1 (see `FONT-LICENCES.md`).
 
-This integration was not written by, or with the endorsement or support of, Kramer AV but serves the very real need of extending the life of models that are no longer supported by the manufacturer.
+This integration was not written by, or with the endorsement or support of, Kramer AV but meets the need to extend the life of models that are no longer supported by the manufacturer and might otherwise go to landfill.
