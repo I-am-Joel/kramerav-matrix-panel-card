@@ -43,7 +43,7 @@ In the card editor, choose the unit's **Status** sensor (for example `sensor.din
 
 <img width="2054" height="1410" alt="Kramer matrix card editor view" src="https://github.com/user-attachments/assets/fb86f771-866f-45b7-b167-f05381fa8f0c" />
 
-Names are held in the card and start from the integration's names, so each dashboard can label the same unit differently. A short label for a button whose integration name is still a default ("Input 001 Video" and the like) is left blank, and the button shows only its number.
+Names default to those defined in the integration but can be renamed in each card. A short label for a button whose integration name is still at default (eg "Input 001 Video") is left blank and the button shows only its panel number.
 
 <img width="676" height="574" alt="kramer-matrix-card-custom-buttons" src="https://github.com/user-attachments/assets/7c71917e-d4c6-4337-98fb-43301f162aeb" />
 
