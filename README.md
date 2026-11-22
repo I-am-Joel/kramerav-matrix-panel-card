@@ -4,7 +4,7 @@
 
 A Home Assistant dashboard card that shows a Kramer matrix switcher as a virtual front panel and controls it the way the real unit works: choose an output, then choose an input.
 
-It works with the [KramerAVhass integration](https://github.com/I-am-Joel/KramerAVhass) (version 0.14.2 or later). The card reads the integration's **Status** sensor and calls the integration's actions. It never talks to a unit directly, and it never contacts an external server: the fonts it uses are inside the card file.
+It works with the [KramerAVhass integration](https://github.com/I-am-Joel/KramerAVhass) (version 0.14.2 or later). The card reads the integration's **Status** sensor and calls the integration's actions.
 
 <img width="1818" height="1488" alt="The card displaying a Kramer VS-162AV matrix switcher" src="https://github.com/user-attachments/assets/985882ba-6103-433d-b8a5-7d986eb5d41e" />
 
