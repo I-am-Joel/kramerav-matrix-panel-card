@@ -7,7 +7,7 @@
  * Not written by, or endorsed by, Kramer AV. MIT licence. Fonts: SIL Open Font Licence (see FONT-LICENCES.md).
  */
 
-const CARD_VERSION = "0.1.4";
+const CARD_VERSION = "0.1.5";
 const MSG_NOT_FOUND = "Selected sensor not found. Check if device or integration is offline and that the sensor name is correct.";
 const MSG_WRONG = "Selected sensor is incorrect. A Kramer Status sensor must be selected.";
 const CARD_TYPE = "kramerav-matrix-panel-card";
@@ -228,6 +228,7 @@ class KramerAvMatrixPanelCard extends HTMLElement {
     this._scrollTimer = null;
     this._errTimer = null;
     this._holdTimer = null;
+    this._waitTimer = null; // cancels a waiting action after the set time
     this._held = false;
     this._locked = false;
   }
@@ -260,16 +261,19 @@ class KramerAvMatrixPanelCard extends HTMLElement {
     const perRow = PER_ROW.includes(Number(config.buttons_per_row)) ? Number(config.buttons_per_row) : 0;
     const hold = Number(config.hold_time);
     const lockHold = Number(config.lock_hold_time);
+    const cancelAfter = Number(config.cancel_after);
     this._config = {
       ...config,
       buttons_per_row: perRow,
       rack_ears: config.rack_ears !== false,
       lock_button: config.lock_button !== false,
       show_function: config.show_function !== false,
+      show_mode: config.show_mode !== false,
       show_custom_buttons: config.show_custom_buttons !== false,
       show_model_text: config.show_model_text !== false,
       hold_time: hold >= 0.3 && hold <= 3 ? hold : 0.8,
       lock_hold_time: lockHold >= 1 && lockHold <= 10 ? lockHold : 3,
+      cancel_after: cancelAfter >= 3 && cancelAfter <= 60 ? cancelAfter : 10,
       show_window: config.show_window !== false,
       show_segments: config.show_segments !== false,
       segment_color: config.segment_color || DEFAULT_SEGMENT,
@@ -300,7 +304,7 @@ class KramerAvMatrixPanelCard extends HTMLElement {
   }
 
   disconnectedCallback() {
-    [this._idleTimer, this._scrollTimer, this._errTimer, this._holdTimer, this._entryTimer].forEach(clearTimeout);
+    [this._idleTimer, this._scrollTimer, this._errTimer, this._holdTimer, this._entryTimer, this._waitTimer].forEach(clearTimeout);
   }
 
   /* ------------------------------------------------ unit data */
@@ -411,7 +415,7 @@ class KramerAvMatrixPanelCard extends HTMLElement {
       : [];
     const sig = JSON.stringify([
       u.inputs, u.outputs, u.modes, u.audio, u.off, u.slots > 0, perRow, c.rack_ears, c.lock_button,
-      c.show_window, c.show_segments, c.show_model_text, c.user_heading, users, c.show_function,
+      c.show_window, c.show_segments, c.show_model_text, c.user_heading, users, c.show_function, c.show_mode,
       users.some((i) => c.user_buttons[i].enforce_take),
     ]);
     if (sig !== this._sig) {
@@ -434,7 +438,7 @@ class KramerAvMatrixPanelCard extends HTMLElement {
       `<span class="cap">${esc(caption)}</span></div>`;
 
     const modeItems = [];
-    if (u.modes) {
+    if (u.modes && c.show_mode) {
       [["video", "VIDEO"], ["audio", "AUDIO"], ["afv", "AFV"]].forEach(([m, name]) =>
         modeItems.push(small("mode", m, name, `data-long="${name}" style="--glow:var(--${m === "afv" ? "together" : m})"`)));
     }
@@ -605,6 +609,7 @@ class KramerAvMatrixPanelCard extends HTMLElement {
       }
     }
     const flashing = this._pendingOut && !single && !this._reduced();
+    const rclHint = this._rclHint(u);
 
     e.out.forEach((btn, i) => {
       const nm = this._name(u, layer, "out", i);
@@ -621,11 +626,12 @@ class KramerAvMatrixPanelCard extends HTMLElement {
       btn.querySelector(".lab").textContent = nm.short;
       btn.title = nm.long;
       const lit = !this._fn && src === i + 1;
-      btn.classList.toggle("lit", lit);
-      btn.classList.toggle("flash", lit && this._pendingOut && !single && !this._fn);
+      const hint = rclHint.has(i + 1); // a filled preset is reached with this button
+      btn.classList.toggle("lit", lit || hint);
+      btn.classList.toggle("flash", (lit && this._pendingOut && !single && !this._fn) || hint);
       btn.style.setProperty("--glow", this._fn ? "#fff" : glow);
       const presetName = this._fn ? `Preset digit ${(i + 1) % 10}, ` : "";
-      btn.setAttribute("aria-label", `${presetName}Input ${i + 1}, ${nm.long}${lit ? ", selected" : ""}`);
+      btn.setAttribute("aria-label", `${presetName}Input ${i + 1}, ${nm.long}${lit ? ", selected" : ""}${hint ? ", filled preset" : ""}`);
       btn.setAttribute("aria-pressed", lit ? "true" : "false");
     });
     e.pairs.forEach((p) => {
@@ -813,7 +819,53 @@ class KramerAvMatrixPanelCard extends HTMLElement {
     } catch (err) {
       this._error(err);
     }
+    this._syncWait(true); // every press restarts the wait
     this._paint(this._unit());
+  }
+
+  /* Anything the card is holding while it waits for the next press: an output choice, STO/RCL, TAKE. */
+  _isWaiting() {
+    return this._pendingOut || !!this._fn || this._presetPick !== null || this._userPending !== null;
+  }
+
+  /* Start, restart or stop the timer that cancels a waiting action. */
+  _syncWait(restart) {
+    if (!(this._isWaiting() || this._sel !== null)) {
+      clearTimeout(this._waitTimer);
+      this._waitTimer = null;
+      return;
+    }
+    if (!restart && this._waitTimer) return;
+    clearTimeout(this._waitTimer);
+    this._waitTimer = setTimeout(() => this._waitExpired(), this._config.cancel_after * 1000);
+  }
+
+  _waitExpired() {
+    this._waitTimer = null;
+    // A preset number is being typed: its own timer decides first, then the wait starts afresh.
+    if (this._entry || this._entryBusy) return; // _entryDone starts the wait again once the number is in
+    const acting = this._isWaiting();
+    this._cancelAll();
+    if (acting && this._online() && !this._locked) this._show("CANCELLED DUE TO TIME OUT", 4000);
+    this._paint(this._unit());
+  }
+
+  /* While RCL waits for a preset, the input buttons that lead to a filled preset (numbers of the visible buttons). */
+  _rclHint(u) {
+    const out = new Set();
+    if (this._fn !== "rcl" || !u.slots || this._entryBusy) return out;
+    if (u.slots <= u.inputs) {
+      u.filled.forEach((n) => out.add(n)); // every preset has its own button
+    } else {
+      // Buttons 1 to 10 are the digits (10 is 0): show the next digit that leads to a filled preset.
+      const typed = this._entry;
+      u.filled.forEach((n) => {
+        const t = String(n);
+        const d = !typed ? t[0] : t.length === 2 && t[0] === typed ? t[1] : null;
+        if (d != null) out.add(d === "0" ? 10 : Number(d));
+      });
+    }
+    return new Set([...out].filter((b) => b >= 1 && b <= u.inputs));
   }
 
   _pressOutput(n) {
@@ -871,6 +923,11 @@ class KramerAvMatrixPanelCard extends HTMLElement {
 
   async _pressFn(u, k) {
     if (k === "all") {
+      if (this._sel === 0 && this._pendingOut) {
+        this._cancelAll();
+        this._show("CANCELLED", 4000);
+        return;
+      }
       this._fn = null;
       this._cancelEntry();
       this._presetPick = null;
@@ -897,9 +954,18 @@ class KramerAvMatrixPanelCard extends HTMLElement {
       this._pendingOut = false;
       this._presetPick = null;
       this._cancelEntry();
-      this._fn = this._fn === k ? null : k;
-      if (this._fn) this._showEntry();
-      else this._showIdle();
+      if (this._fn === k) {
+        this._fn = null;
+        this._show("CANCELLED", 4000);
+        return;
+      }
+      if (k === "rcl" && !u.filled.length) {
+        this._fn = null;
+        this._show("NO PRESETS FILLED", 4000);
+        return;
+      }
+      this._fn = k;
+      this._showEntry();
     } else if (k === "take") {
       if (this._fn === "sto" && this._presetPick) await this._store(u);
       else if (this._userPending !== null) {
@@ -961,6 +1027,7 @@ class KramerAvMatrixPanelCard extends HTMLElement {
       this._fn = null;
       this._error(err);
     }
+    this._syncWait(false);
     this._paint(this._unit());
   }
 
@@ -1234,6 +1301,10 @@ class KramerAvMatrixPanelCardEditor extends HTMLElement {
       box.appendChild(this._field("7 segment display colour",
         h("input", { type: "color", value: c.segment_color || DEFAULT_SEGMENT, oninput: (e) => this._set(["segment_color"], e.target.value) })));
     }
+    if ((a.features || {}).modes) {
+      box.appendChild(this._check("MODE buttons", ["show_mode"], c.show_mode !== false));
+      box.appendChild(h("p", { class: "note", text: "While hidden, the audio/video mode can't be changed from this card." }));
+    }
     box.appendChild(this._check("Function buttons", ["show_function"], c.show_function !== false));
     box.appendChild(h("p", { class: "note",
       text: "Function buttons are STO, RCL, LOCK, ALL, OFF and TAKE. When they are hidden, presets, OFF and the card lock cannot be used from the card. TAKE is still shown if a custom button needs it." }));
@@ -1242,6 +1313,10 @@ class KramerAvMatrixPanelCardEditor extends HTMLElement {
       h("input", { type: "number", min: "1", max: "10", step: "1", value: c.lock_hold_time || 3,
         onchange: (e) => this._set(["lock_hold_time"], Number(e.target.value) || 3) }),
       "How long LOCK must be held to lock or unlock the panel. It affects only the LOCK button."));
+    box.appendChild(this._field("Cancel waiting actions after (seconds)",
+      h("input", { type: "number", min: "3", max: "60", step: "1", value: c.cancel_after || 10,
+        onchange: (e) => this._set(["cancel_after"], Number(e.target.value) || 10) }),
+      'Waiting actions (ALL, output selection, STO, RCL and buttons set to "Enforce PRESS "TAKE" before running") cancel themselves after this long without a press. 3 to 60, default 10.'));
     box.appendChild(this._check("Custom buttons", ["show_custom_buttons"], c.show_custom_buttons !== false));
     box.appendChild(this._field("Hold time before displaying a button's long name (0.3 to 3 seconds)",
       h("input", { type: "number", min: "0.3", max: "3", step: "0.1", value: c.hold_time || 0.8,
