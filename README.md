@@ -1,3 +1,25 @@
+> [!IMPORTANT]
+> **This card now comes with the KramerAVHass integration and is no longer installed separately.**
+> From version 0.17.3, the Matrix Panel Card is bundled inside
+> [KramerAVhass](https://github.com/I-am-Joel/KramerAVhass). The integration loads the card
+> automatically, so there is nothing extra to install and no dashboard resource to add.
+> This repository will not receive further updates. Card changes will now be released with the integration.
+>
+> ### Switching from this separate card
+> Your existing dashboard cards and their settings keep working. The card type
+> (`custom:kramerav-matrix-panel-card`) is unchanged, and nothing needs to be set up again.
+>
+> 1. Update the Kramer integration to **0.17.3 or later** in HACS, then restart Home Assistant.
+> 2. Hard refresh your browser (or clear its cache) and check your cards still display.
+> 3. Remove this separate card in HACS. If you installed it manually, delete its file as well.
+> 4. In **Settings → Dashboards → Resources**, delete any `kramerav-matrix-panel-card` entry left over.
+> 5. Refresh once more and confirm the cards still work.
+>
+> Update the integration first. If you remove this card before the integration is updated, your
+> dashboard will show "Custom element doesn't exist" until it is. If both copies are present the
+> card still works, but remove this one so the old version is not the one that loads.
+
+
 # KramerAV Matrix Panel Card
 
 <img width="1800" height="406" alt="The card displaying a Kramer VS-812 8 way switcher" src="https://github.com/user-attachments/assets/2898fd2f-47b4-4507-918a-464c645ef93d" />
